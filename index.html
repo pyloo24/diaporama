@@ -2,460 +2,190 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mosaïque Fluide Haute Performance</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Galerie Mosaïque</title>
     <style>
         :root {
-            --rows: 3;
-            --gap: 15px;
-            --bg-color: #050505;
+            --rows: 3;          /* Nombre de lignes */
+            --gap: 15px;        /* Espace entre les vignettes */
+            /* Taille carrée basée sur la hauteur de l'écran */
+            --cell-size: calc((100vh - (var(--gap) * (var(--rows) + 1))) / var(--rows));
         }
 
-        * { box-sizing: border-box; }
+        body, html {
+            margin: 0; padding: 0;
+            height: 100vh; width: 100vw;
+            background: #000;
+            overflow: hidden; /* Bloque le scroll de la page entière */
+            touch-action: none; /* Crucial : empêche le navigateur de gérer le tactile */
+        }
 
-        body {
-            margin: 0; 
-            background: var(--bg-color); 
-            color: white;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            overflow: hidden;
+        /* GRILLE HORIZONTALE */
+        #gallery {
+            display: grid;
+            grid-template-rows: repeat(var(--rows), var(--cell-size));
+            grid-auto-flow: column;
+            grid-auto-columns: var(--cell-size);
+            gap: var(--gap);
+            padding: var(--gap);
             height: 100vh;
-        }
-
-        .gallery-wrapper {
-            position: relative;
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            overflow: hidden;
-        }
-
-        .mosaic-container {
-            position: relative;
-            height: 90vh;
-            width: 100%;
-            padding: 0 5vw;
-            overflow-x: scroll;
+            width: 100vw;
+            box-sizing: border-box;
+            
+            overflow-x: auto;
             overflow-y: hidden;
-            scrollbar-width: none;
+            
             cursor: grab;
-            user-select: none;
-            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none; /* Firefox */
         }
+        #gallery::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 
-        .mosaic-container::-webkit-scrollbar { display: none; }
-
-        /* Spacer invisible qui définit la largeur de scroll */
-        .mosaic-spacer {
-            height: 1px;
-            opacity: 0;
-            pointer-events: none;
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-
-        .mosaic-item {
-            position: absolute;
-            top: 0;
-            left: 0;
-            border-radius: 4px;
+        /* VIGNETTES CARRÉES */
+        .vignette {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            background: #111;
             overflow: hidden;
-            background: #1a1a1a;
-            will-change: transform;
-            contain: strict;
-            transition: transform 0.15s ease-out;
-            display: none; /* Caché par défaut, affiché par JS */
+            user-select: none;
         }
 
-        .mosaic-item:hover { 
-            transform: scale(1.03); 
-            z-index: 10;
-        }
-
-        .mosaic-item img {
-            width: 100%; 
+        .vignette img {
+            width: 100%;
             height: 100%;
-            object-fit: cover;
-            pointer-events: none;
-            display: block;
-            background: #2a2a2a; /* Placeholder color avant chargement */
+            object-fit: cover; /* Recadre en carré proprement */
+            pointer-events: none; /* Évite de "sortir" l'image au drag */
+            transition: transform 0.2s;
         }
 
+        /* LIGHTBOX */
         #lightbox {
-            position: fixed; 
-            inset: 0;
-            background: rgba(0,0,0,0.95);
-            display: none; 
-            justify-content: center; 
-            align-items: center;
-            z-index: 1000; 
-            backdrop-filter: blur(10px);
-            cursor: zoom-out;
+            position: fixed; top:0; left:0; width:100%; height:100%;
+            background: rgba(0,0,0,0.9);
+            display: none; justify-content: center; align-items: center;
+            z-index: 1000; cursor: pointer;
         }
-
-        #lightbox img { 
-            max-width: 90%; 
-            max-height: 90%; 
-            object-fit: contain;
-            box-shadow: 0 0 50px rgba(0,0,0,0.8);
-            border-radius: 4px;
-        }
-
-        .nav-btn {
-            position: absolute; 
-            top: 50%; 
-            transform: translateY(-50%);
-            background: rgba(255,255,255,0.1); 
-            border: 1px solid rgba(255,255,255,0.2);
-            color: white;
-            padding: 20px 15px; 
-            cursor: pointer; 
-            z-index: 100; 
-            border-radius: 8px;
-            font-size: 20px;
-            transition: all 0.2s;
-            backdrop-filter: blur(4px);
-        }
-
-        .nav-btn:hover { 
-            background: rgba(255,255,255,0.25); 
-            transform: translateY(-50%) scale(1.1);
-        }
-
-        .next-btn { right: 20px; }
-        .prev-btn { left: 20px; }
-
-        /* Indicateur de chargement */
-        .loading-indicator {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(255,255,255,0.1);
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 12px;
-            opacity: 0;
-            transition: opacity 0.3s;
-            pointer-events: none;
-            z-index: 50;
-        }
-        .loading-indicator.active { opacity: 1; }
+        #lightbox img { max-width: 95%; max-height: 95%; object-fit: contain; }
     </style>
 </head>
 <body>
 
-    <div class="gallery-wrapper">
-        <button class="nav-btn prev-btn" onclick="sideScroll(-window.innerWidth * 0.8)">❮</button>
-        
-        <div class="mosaic-container" id="gallery">
-            <div class="mosaic-spacer"></div>
-        </div>
-        
-        <button class="nav-btn next-btn" onclick="sideScroll(window.innerWidth * 0.8)">❯</button>
-    </div>
+    <div id="gallery"></div>
 
-    <div class="loading-indicator" id="loader">Chargement...</div>
-
-    <div id="lightbox" onclick="closeLightbox()">
-        <img id="lightbox-img" src="" alt="Full size">
+    <div id="lightbox" onclick="this.style.display='none'">
+        <img src="" alt="">
     </div>
 
     <script>
-        // ==================== CONFIGURATION ====================
-        const CONFIG = {
-            ROWS: 3,
-            GAP: 15,
-            BUFFER_COLS: 2,      // Colonnes supplémentaires à charger (de chaque côté)
-            DRAG_FRICTION: 0.93  // Frottement inertie (0.9=glisse longtemps, 0.5=stop court)
-        };
-
-        // ==================== ÉTAT GLOBAL ====================
-        let allImages = [];          
-        let itemSize = 0;            
-        let totalCols = 0;           
-        let totalWidth = 0;          
-        let pool = [];               // Pool d'éléments recyclables
-        let isDragging = false;
-        let dragStartX = 0;
-        let dragStartScroll = 0;
-        let velocity = 0;
-        let lastX = 0;
-        let rafId = null;
-        let isScrollScheduled = false;
-
-        // ==================== RÉFÉRENCES DOM ====================
         const gallery = document.getElementById('gallery');
         const lightbox = document.getElementById('lightbox');
-        const lightboxImg = document.getElementById('lightbox-img');
-        const loader = document.getElementById('loader');
+        const lbImg = lightbox.querySelector('img');
 
-        // ==================== INITIALISATION ====================
-        async function init() {
-            showLoader(true);
+        let isDown = false;
+        let startX;
+        let scrollLeft;
+        let velocity = 0;
+        let lastPosX = 0;
+        let rafId;
+
+        // 1. CHARGEMENT
+        async function load() {
             try {
                 const res = await fetch('images.json');
-                allImages = await res.json();
-                
-                calculateDimensions();
-                createPool();
-                updateVisibleItems();
-                setupEvents();
-                
-                console.log(`✓ Virtualisation active: ${pool.length} éléments DOM pour ${allImages.length} images`);
-                
-            } catch(e) {
-                console.error("Erreur chargement:", e);
-                alert("Erreur de chargement des images. Vérifiez que images.json existe.");
-            }
-            showLoader(false);
-        }
-
-        function showLoader(show) {
-            loader.classList.toggle('active', show);
-        }
-
-        // ==================== CALCULS DIMENSIONS ====================
-        function calculateDimensions() {
-            const containerHeight = window.innerHeight * 0.9 - (CONFIG.GAP * 2);
-            itemSize = (containerHeight / CONFIG.ROWS) - CONFIG.GAP;
-            
-            totalCols = Math.ceil(allImages.length / CONFIG.ROWS);
-            totalWidth = totalCols * (itemSize + CONFIG.GAP) + (window.innerWidth * 0.1);
-            
-            // Mettre à jour le spacer pour la scrollbar native
-            const spacer = gallery.querySelector('.mosaic-spacer');
-            if (spacer) spacer.style.width = `${totalWidth}px`;
-        }
-
-        // ==================== CRÉATION DU POOL ====================
-        function createPool() {
-            // Nettoyer sauf le spacer
-            const spacer = gallery.querySelector('.mosaic-spacer');
-            gallery.innerHTML = '';
-            if (spacer) gallery.appendChild(spacer);
-            
-            // Calculer taille du pool (visible + buffer des deux côtés)
-            const visibleCols = Math.ceil(window.innerWidth / (itemSize + CONFIG.GAP));
-            const poolSize = (visibleCols + CONFIG.BUFFER_COLS * 2 + 1) * CONFIG.ROWS;
-            
-            pool = [];
-            
-            for (let i = 0; i < poolSize; i++) {
-                const el = document.createElement('div');
-                el.className = 'mosaic-item';
-                el.style.width = `${itemSize}px`;
-                el.style.height = `${itemSize}px`;
-                
-                const img = document.createElement('img');
-                img.decoding = 'async';
-                img.alt = '';
-                
-                // Clic pour lightbox (vérifie pas en train de drag)
-                el.addEventListener('click', (e) => {
-                    if (Math.abs(velocity) > 3) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        return;
-                    }
-                    const idx = parseInt(el.dataset.virtualIndex);
-                    if (!isNaN(idx) && idx >= 0) {
-                        openLightbox(idx);
-                    }
-                });
-                
-                el.appendChild(img);
-                gallery.appendChild(el);
-                
-                pool.push({
-                    element: el,
-                    image: img,
-                    currentIndex: -1,
-                    loaded: false
-                });
-            }
-        }
-
-        // ==================== MOTEUR DE RENDU VIRTUEL ====================
-        function updateVisibleItems() {
-            const scrollX = gallery.scrollLeft;
-            const colWidth = itemSize + CONFIG.GAP;
-            
-            // Calculer quelles colonnes doivent être visibles
-            const startCol = Math.max(0, Math.floor(scrollX / colWidth) - CONFIG.BUFFER_COLS);
-            const endCol = Math.min(
-                totalCols, 
-                Math.ceil((scrollX + window.innerWidth) / colWidth) + CONFIG.BUFFER_COLS
-            );
-            
-            let poolIndex = 0;
-            
-            // Assigner les éléments du pool aux positions virtuelles
-            for (let col = startCol; col < endCol && poolIndex < pool.length; col++) {
-                for (let row = 0; row < CONFIG.ROWS; row++) {
-                    const virtualIndex = col * CONFIG.ROWS + row;
-                    if (virtualIndex >= allImages.length) continue;
+                const images = await res.json();
+                images.forEach(name => {
+                    const div = document.createElement('div');
+                    div.className = 'vignette';
+                    div.innerHTML = `<img src="vignettes/${name}" data-full="images/${name}">`;
                     
-                    const item = pool[poolIndex];
-                    const x = col * colWidth + (window.innerWidth * 0.05);
-                    const y = row * (itemSize + CONFIG.GAP) + CONFIG.GAP;
-                    
-                    // Positionnement GPU-accéléré
-                    item.element.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-                    item.element.style.display = 'block';
-                    item.element.dataset.virtualIndex = virtualIndex;
-                    
-                    // Charger l'image si nouveau
-                    if (item.currentIndex !== virtualIndex) {
-                        item.currentIndex = virtualIndex;
-                        const src = `vignettes/${allImages[virtualIndex]}`;
-                        
-                        // Lazy loading: vider d'abord si c'était une autre image
-                        if (item.image.src && !item.image.src.includes(allImages[virtualIndex])) {
-                            item.image.src = ''; // Décharger l'ancienne
+                    div.addEventListener('click', () => {
+                        // On n'ouvre que si on ne swipe pas
+                        if (Math.abs(velocity) < 2) {
+                            lbImg.src = div.querySelector('img').dataset.full;
+                            lightbox.style.display = 'flex';
                         }
-                        
-                        // Charger la nouvelle (avec petit délai pour le buffer lointain)
-                        const isNear = Math.abs(x - scrollX) < window.innerWidth * 1.2;
-                        if (isNear) {
-                            item.image.src = src;
-                        } else {
-                            setTimeout(() => {
-                                if (item.currentIndex === virtualIndex) {
-                                    item.image.src = src;
-                                }
-                            }, 100);
-                        }
-                    }
-                    
-                    poolIndex++;
-                }
-            }
-            
-            // Cacher les éléments excédentaires
-            for (let i = poolIndex; i < pool.length; i++) {
-                pool[i].element.style.display = 'none';
-                pool[i].currentIndex = -1;
-            }
-        }
-
-        // ==================== ÉVÉNEMENTS ====================
-        function setupEvents() {
-            // Scroll: mise à jour des items visibles (throttlé par RAF)
-            gallery.addEventListener('scroll', () => {
-                if (!isScrollScheduled) {
-                    requestAnimationFrame(() => {
-                        updateVisibleItems();
-                        isScrollScheduled = false;
                     });
-                    isScrollScheduled = true;
-                }
-            }, { passive: true });
-
-            // Wheel horizontal
-            gallery.addEventListener('wheel', (e) => {
-                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                    e.preventDefault();
-                    gallery.scrollLeft += e.deltaY * 0.8;
-                }
-            }, { passive: false });
-
-            // Drag/Swipe
-            gallery.addEventListener('mousedown', startDrag);
-            window.addEventListener('mousemove', drag, { passive: false });
-            window.addEventListener('mouseup', endDrag);
-            
-            // Touch pour mobile (désactivé car scroll natif suffisant)
-            // gallery.addEventListener('touchstart', ...); 
-            
-            // Resize debouncé
-            let resizeTimer;
-            window.addEventListener('resize', () => {
-                clearTimeout(resizeTimer);
-                resizeTimer = setTimeout(() => {
-                    calculateDimensions();
-                    createPool();
-                    updateVisibleItems();
-                }, 200);
-            });
-            
-            // Clavier
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') closeLightbox();
-                if (e.key === 'ArrowRight') sideScroll(window.innerWidth * 0.8);
-                if (e.key === 'ArrowLeft') sideScroll(-window.innerWidth * 0.8);
-            });
+                    gallery.appendChild(div);
+                });
+            } catch(e) { console.error(e); }
         }
 
-        // ==================== LOGIQUE DE DRAG & INERTIE ====================
-        function startDrag(e) {
-            isDragging = true;
+        // 2. LOGIQUE DE SWIPE HORIZONTAL (SOURIS & TACTILE)
+        const start = (e) => {
+            isDown = true;
             gallery.style.cursor = 'grabbing';
-            dragStartX = e.pageX;
-            dragStartScroll = gallery.scrollLeft;
+            const x = e.pageX || e.touches[0].pageX;
+            startX = x - gallery.offsetLeft;
+            scrollLeft = gallery.scrollLeft;
             velocity = 0;
-            lastX = e.pageX;
             cancelAnimationFrame(rafId);
-        }
+        };
 
-        function drag(e) {
-            if (!isDragging) return;
-            e.preventDefault();
+        const move = (e) => {
+            if (!isDown) return;
+            e.preventDefault(); 
+            const x = e.pageX || e.touches[0].pageX;
+            const walk = (x - gallery.offsetLeft) - startX;
             
-            const x = e.pageX;
-            gallery.scrollLeft = dragStartScroll - (x - dragStartX) * 1.5;
-            velocity = x - lastX;
-            lastX = x;
-        }
+            // Calcul de la vitesse pour l'inertie (basé sur l'axe X)
+            velocity = x - lastPosX;
+            lastPosX = x;
 
-        function endDrag() {
-            if (!isDragging) return;
-            isDragging = false;
+            gallery.scrollLeft = scrollLeft - walk;
+        };
+
+        const end = () => {
+            isDown = false;
             gallery.style.cursor = 'grab';
-            
-            if (Math.abs(velocity) > 2) {
-                applyInertia();
-            }
-        }
+            applyInertia();
+        };
 
+        // 3. INERTIE ET AIMANTATION (SNAP)
         function applyInertia() {
-            if (isDragging || Math.abs(velocity) < 0.5) {
-                velocity = 0;
-                return;
-            }
-            
-            gallery.scrollLeft -= velocity;
-            velocity *= CONFIG.DRAG_FRICTION;
-            
-            rafId = requestAnimationFrame(applyInertia);
-        }
-
-        // ==================== FONCTIONS UTILITAIRES ====================
-        function sideScroll(amount) {
-            gallery.scrollBy({ left: amount, behavior: 'smooth' });
-        }
-
-        function openLightbox(index) {
-            const src = `hd/${allImages[index]}`;
-            lightboxImg.src = src;
-            lightbox.style.display = 'flex';
-            
-            // Précharger suivante et précédente
-            if (index < allImages.length - 1) {
-                new Image().src = `hd/${allImages[index + 1]}`;
-            }
-            if (index > 0) {
-                new Image().src = `hd/${allImages[index - 1]}`;
+            if (Math.abs(velocity) > 0.5) {
+                gallery.scrollLeft -= velocity;
+                velocity *= 0.95; // Friction
+                rafId = requestAnimationFrame(applyInertia);
+            } else {
+                snap();
             }
         }
 
-        function closeLightbox() {
-            lightbox.style.display = 'none';
-            lightboxImg.src = '';
+        function snap() {
+            // Calcule la largeur d'une cellule + le gap pour s'aimanter pile au bord
+            const cellSize = gallery.querySelector('.vignette').offsetWidth + parseInt(getComputedStyle(gallery).gap);
+            const target = Math.round(gallery.scrollLeft / cellSize) * cellSize;
+            gallery.scrollTo({ left: target, behavior: 'smooth' });
         }
 
-        // Démarrer
-        init();
+        // ÉVÉNEMENTS SOURIS
+        gallery.addEventListener('mousedown', start);
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', end);
+
+        // ÉVÉNEMENTS TACTILES
+        gallery.addEventListener('touchstart', start, {passive: false});
+        gallery.addEventListener('touchmove', move, {passive: false});
+        gallery.addEventListener('touchend', end);
+
+        // TRACKPAD / MOLETTE (Adaptation intelligente)
+        gallery.addEventListener('wheel', (e) => {
+            cancelAnimationFrame(rafId);
+            // Si l'utilisateur utilise un trackpad (deltaX présent) ou une molette (deltaY)
+            // On défile toujours horizontalement
+            if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                // Scroll horizontal naturel (Trackpad)
+                gallery.scrollLeft += e.deltaX;
+            } else {
+                // Molette verticale forcée en horizontal
+                gallery.scrollLeft += e.deltaY;
+            }
+            
+            e.preventDefault();
+            clearTimeout(window.snapTimer);
+            window.snapTimer = setTimeout(snap, 150);
+        }, {passive: false});
+
+        load();
     </script>
 </body>
 </html>
